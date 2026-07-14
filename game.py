@@ -8,7 +8,7 @@ DIRECTIONS = [UP, RIGHT, DOWN, LEFT]
 
 
 class Game:
-    def __init__(self, height: int, width: int) -> None:
+    def __init__(self, height: int = 15, width: int = 17) -> None:
         self.height = height
         self.width = width
         self.reset()

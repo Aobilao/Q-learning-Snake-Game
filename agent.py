@@ -222,9 +222,11 @@ def load_log(path: str = TRAINING_LOG) -> TrainingLog:
 
 if __name__ == "__main__":
     game = Game(HEIGHT, WIDTH)
+    agent = Agent()
+
     target_episode = TRAINING_EPISODES * 0.6
-    decay_rate = (0.01 / 1.0) ** (1 / target_episode)
-    agent = Agent(decay_rate=decay_rate)
+    decay_rate = (agent.epsilon_end / agent.epsilon_start) ** (1 / target_episode)
+    agent.decay_rate = decay_rate
 
     log = agent.train(TRAINING_EPISODES, game)
     agent.save_values()
