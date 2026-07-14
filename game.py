@@ -98,15 +98,36 @@ class Game:
         self.reset()
 
     def render(self) -> None:
-        grid = [["." for _ in range(self.width)] for _ in range(self.height)]
+        RESET = "\033[0m"
+        BG_GREEN = "\033[42m"
+        BG_BGREEN = "\033[102m"
+        BG_RED = "\033[41m"
+        BG_WHITE = "\033[47m"
+        BLOCK = "  "
+
+        w = self.width + 2
+        h = self.height + 2
+
+        display = [[BLOCK for _ in range(w)] for _ in range(h)]
+
+        for x in range(w):
+            display[0][x] = f"{BG_WHITE}{BLOCK}{RESET}"
+            display[h - 1][x] = f"{BG_WHITE}{BLOCK}{RESET}"
+        for y in range(h):
+            display[y][0] = f"{BG_WHITE}{BLOCK}{RESET}"
+            display[y][w - 1] = f"{BG_WHITE}{BLOCK}{RESET}"
+
         for i, j in list(self.body)[1:]:
-            grid[i][j] = "o"
+            display[i + 1][j + 1] = f"{BG_GREEN}{BLOCK}{RESET}"
+
         head_i, head_j = self.body[0]
-        grid[head_i][head_j] = "H"
+        display[head_i + 1][head_j + 1] = f"{BG_BGREEN}{BLOCK}{RESET}"
+
         if self.food_pos:
             food_i, food_j = self.food_pos
-            grid[food_i][food_j] = "*"
-        print("\n".join("".join(row) for row in grid))
+            display[food_i + 1][food_j + 1] = f"{BG_RED}{BLOCK}{RESET}"
+
+        print("\n".join("".join(row) for row in display))
 
 
 if __name__ == "__main__":

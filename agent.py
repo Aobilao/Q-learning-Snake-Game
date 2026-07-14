@@ -3,17 +3,18 @@ import pickle
 import time
 from game import Game, STRAIGHT, TURN_LEFT, TURN_RIGHT
 
+SAVE_PATH = "local_values.pkl"
 VALUES_PATH = "values.pkl"
+TURN_CHOICES = (TURN_LEFT, STRAIGHT, TURN_RIGHT)
 
 HEIGHT = 15
 WIDTH = 17
-TRAINING_EPISODES = 100000
+TRAINING_EPISODES = 1000000
 DEFAULT_VALUE = 0.0
-TURN_CHOICES = (TURN_LEFT, STRAIGHT, TURN_RIGHT)
 FOOD_REWARD = 10.0
 LOSE_REWARD = -10.0
 TIMEOUT_REWARD = -10.0
-STEP_REWARD = 0.0
+STEP_REWARD = -0.01
 MAX_STEPS = 17 * 15
 
 State = tuple[bool, bool, bool, int, int, int]
@@ -26,7 +27,7 @@ def sign(x):
 class Agent:
     def __init__(
         self,
-        gamma: float = 1.0,
+        gamma: float = 0.95,
         alpha: float = 0.1,
         epsilon_start: float = 1.0,
         epsilon_end: float = 0.01,
@@ -99,27 +100,28 @@ class Agent:
                 is_terminal = (
                     not game.is_alive or game.game_won or game.steps > MAX_STEPS
                 )
-                Q_max = max(self.Q(next_state)) if is_terminal else 0.0
+                Q_max = max(self.Q(next_state)) if not is_terminal else 0.0
 
                 self.Q(previous_state)[action] += self.alpha * (
                     reward + self.gamma * Q_max - self.Q(previous_state)[action]
                 )
             print(f"\rFinished training {episode + 1} episodes", end="", flush=True)
 
-    def save(self, path: str = VALUES_PATH) -> None:
+    def save(self, path: str = SAVE_PATH) -> None:
         with open(path, "wb") as file:
             pickle.dump(self.values_dict, file)
+        print(f"Saved data to {path}")
 
     def load(self, path: str = VALUES_PATH) -> None:
         with open(path, "rb") as file:
             self.values_dict = pickle.load(file)
+        print(f"Loaded data from {path}")
 
     def play(self, game: Game) -> int:
         game.reset()
         while game.is_alive and not game.game_won:
             action = self.choose_action(game, epsilon=0.0)
             game.step(action)
-
         return len(game.body) - 3
 
 
@@ -151,7 +153,10 @@ def evaluate_avg(episodes: int, agent: Agent, game: Game) -> float:
 
 if __name__ == "__main__":
     game = Game(HEIGHT, WIDTH)
-    agent = Agent()
-    agent.load()
+    target_episode = TRAINING_EPISODES * 0.6
+    decay_rate = (0.01 / 1.0) ** (1 / target_episode)
+    agent = Agent(decay_rate=decay_rate)
+    agent.train(TRAINING_EPISODES, game)
+    agent.save()
     avg = evaluate_avg(10000, agent, game)
     print(avg)
