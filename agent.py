@@ -135,7 +135,7 @@ class Agent:
             epsilon = max(epsilon_end, epsilon_start * (decay_rate**episode))
             state = get_state(game)
             while (
-                game.is_alive and not game.game_won and game.steps <= MAX_STEPS_TRAINING
+                game.is_alive and not game.game_won and game.steps < MAX_STEPS_TRAINING
             ):
                 action = choose(state, epsilon)
                 game.step(action)
@@ -145,7 +145,7 @@ class Agent:
                 is_terminal = (
                     not game.is_alive
                     or game.game_won
-                    or game.steps > MAX_STEPS_TRAINING
+                    or game.steps >= MAX_STEPS_TRAINING
                 )
                 q_max = 0.0 if is_terminal else max(Q(next_state))
 
@@ -196,7 +196,7 @@ class Agent:
 
     def play(self, game: Game) -> int:
         game.reset()
-        while game.is_alive and not game.game_won and game.steps <= MAX_STEPS_PLAYING:
+        while game.is_alive and not game.game_won and game.steps < MAX_STEPS_PLAYING:
             action = self.choose_action(game, epsilon=0.0)
             game.step(action)
         return game.score
