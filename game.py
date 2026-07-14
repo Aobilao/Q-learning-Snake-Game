@@ -34,12 +34,16 @@ class Game:
         head_i, head_j = self.body[0]
         dir_idx = (self.dir_idx + action) % 4
         d_i, d_j = DIRECTIONS[dir_idx]
-        new_i, new_j = head_i + d_i, head_j + d_j
-        return (new_i, new_j)
+        return (head_i + d_i, head_j + d_j)
 
     def in_bound(self, head: tuple[int, int]) -> bool:
         head_i, head_j = head
         return 0 <= head_i < self.height and 0 <= head_j < self.width
+
+    def is_occupied(self, point: tuple[int, int]) -> bool:
+        if not self.in_bound(point):
+            return True
+        return point in self.body_set and point != self.body[-1]
 
     def step(self, action: int) -> None:
         self.ate = False
@@ -55,7 +59,7 @@ class Game:
             return
 
         tail = self.body[-1]
-        if new_head in self.body_set - {tail}:
+        if new_head != tail and new_head in self.body_set:
             self.is_alive = False
             self.death_cause = "body"
             return
@@ -128,8 +132,3 @@ class Game:
             display[food_i + 1][food_j + 1] = f"{BG_RED}{BLOCK}{RESET}"
 
         print("\n".join("".join(row) for row in display))
-
-
-if __name__ == "__main__":
-    game = Game(15, 17)
-    game.play()

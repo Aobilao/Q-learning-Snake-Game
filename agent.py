@@ -16,7 +16,8 @@ FOOD_REWARD = 10.0
 LOSE_REWARD = -10.0
 TIMEOUT_REWARD = -10.0
 STEP_REWARD = -0.01
-MAX_STEPS = 17 * 15
+MAX_STEPS_TRAINING = 17 * 15
+MAX_STEPS_PLAYING = 2000
 
 State = tuple[bool, bool, bool, int, int, int]
 
@@ -65,31 +66,41 @@ class Agent:
         return (*danger, game.dir_idx, food_di, food_dj)
 
     def get_augmented_state(self, game: Game) -> State:
+        is_occupied = game.is_occupied
+        head_i, head_j = game.body[0]
+        dir_idx = game.dir_idx
+
         danger: list[bool] = []
         rays: list[int] = []
         for turn in TURN_CHOICES:
-            new_head = game.new_head(turn)
-            danger.append(game.is_occupied(new_head))
-            rays.append(self.body_ray(game, turn))
+            d_i, d_j = DIRECTIONS[(dir_idx + turn) % 4]
+            ray = 4
+            for dist in range(1, 4):
+                if is_occupied((head_i + d_i * dist, head_j + d_j * dist)):
+                    ray = dist
+                    break
+            danger.append(ray == 1)
+            rays.append(ray)
 
         food_i, food_j = game.food_pos
-        head_i, head_j = game.body[0]
         food_di = sign(food_i - head_i)
         food_dj = sign(food_j - head_j)
 
-        return (*danger, game.dir_idx, food_di, food_dj, *rays)
+        return (*danger, dir_idx, food_di, food_dj, *rays)
 
     def Q(self, state: State) -> list[float]:
-        return self.values_dict.setdefault(state, [DEFAULT_VALUE] * 3)
+        q = self.values_dict.get(state)
+        if q is None:
+            q = [DEFAULT_VALUE] * 3
+            self.values_dict[state] = q
+        return q
 
-    def choose_action(self, game: Game, epsilon: float) -> int:
-        if random.random() <= epsilon:
-            return random.choice(TURN_CHOICES)
-        state = self.get_augmented_state(game)
+    def _greedy_action(self, state: State) -> int:
+        q = self.Q(state)
         best_val = float("-inf")
-        best_turns = []
+        best_turns: list[int] = []
         for turn in TURN_CHOICES:
-            val = self.Q(state)[turn]
+            val = q[turn]
             if val > best_val:
                 best_val = val
                 best_turns = [turn]
@@ -97,12 +108,22 @@ class Agent:
                 best_turns.append(turn)
         return random.choice(best_turns)
 
+    def choose_action_from_state(self, state: State, epsilon: float) -> int:
+        if random.random() <= epsilon:
+            return random.choice(TURN_CHOICES)
+        return self._greedy_action(state)
+
+    def choose_action(self, game: Game, epsilon: float) -> int:
+        if random.random() <= epsilon:
+            return random.choice(TURN_CHOICES)
+        return self._greedy_action(self.get_augmented_state(game))
+
     def compute_reward(self, game: Game) -> float:
         if not game.is_alive:
             return LOSE_REWARD
         if game.ate is True:
             return FOOD_REWARD
-        if game.steps >= MAX_STEPS:
+        if game.steps >= MAX_STEPS_TRAINING:
             return TIMEOUT_REWARD
         return STEP_REWARD
 
@@ -114,32 +135,46 @@ class Agent:
             "death_cause": [],
             "states_visited": [],
         }
+        get_state = self.get_augmented_state
+        Q = self.Q
+        choose = self.choose_action_from_state
+        compute_reward = self.compute_reward
+        alpha = self.alpha
+        gamma = self.gamma
+        epsilon_end = self.epsilon_end
+        epsilon_start = self.epsilon_start
+        decay_rate = self.decay_rate
+        values_dict = self.values_dict
+
         for episode in range(episodes):
             game.reset()
-            while game.is_alive and not game.game_won and game.steps <= MAX_STEPS:
-                previous_state = self.get_augmented_state(game)
-                epsilon = max(
-                    self.epsilon_end, self.epsilon_start * (self.decay_rate**episode)
-                )
-                action = self.choose_action(game, epsilon)
+            epsilon = max(epsilon_end, epsilon_start * (decay_rate**episode))
+            state = get_state(game)
+            while (
+                game.is_alive and not game.game_won and game.steps <= MAX_STEPS_TRAINING
+            ):
+                action = choose(state, epsilon)
                 game.step(action)
-                next_state = self.get_augmented_state(game)
-                reward = self.compute_reward(game)
+                next_state = get_state(game)
+                reward = compute_reward(game)
 
                 is_terminal = (
-                    not game.is_alive or game.game_won or game.steps > MAX_STEPS
+                    not game.is_alive
+                    or game.game_won
+                    or game.steps > MAX_STEPS_TRAINING
                 )
-                Q_max = max(self.Q(next_state)) if not is_terminal else 0.0
+                q_max = 0.0 if is_terminal else max(Q(next_state))
 
-                self.Q(previous_state)[action] += self.alpha * (
-                    reward + self.gamma * Q_max - self.Q(previous_state)[action]
-                )
+                q_prev = Q(state)
+                q_prev[action] += alpha * (reward + gamma * q_max - q_prev[action])
+
+                state = next_state
 
             log["score"].append(len(game.body) - 3)
             log["steps"].append(game.steps)
             log["epsilon"].append(epsilon)
             log["death_cause"].append(game.death_cause)
-            log["states_visited"].append(len(self.values_dict))
+            log["states_visited"].append(len(values_dict))
 
             print(f"\rFinished training {episode + 1} episodes", end="", flush=True)
 
@@ -158,7 +193,7 @@ class Agent:
 
     def play(self, game: Game) -> int:
         game.reset()
-        while game.is_alive and not game.game_won:
+        while game.is_alive and not game.game_won and game.steps <= MAX_STEPS_PLAYING:
             action = self.choose_action(game, epsilon=0.0)
             game.step(action)
         return len(game.body) - 3
