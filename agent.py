@@ -2,7 +2,7 @@ import random
 import pickle
 import time
 from game import DIRECTIONS, Game, STRAIGHT, TURN_LEFT, TURN_RIGHT
-from typing import TypedDict
+from typing import TypedDict, NotRequired
 
 SAVE_PATH = "values/local_values.pkl"
 VALUES_PATH = "values/values.pkl"
@@ -26,9 +26,9 @@ State = tuple[bool, bool, bool, int, int, int, int, int, int]
 class TrainingLog(TypedDict):
     score: list[int]
     steps: list[int]
-    epsilon: list[float]
+    epsilon: NotRequired[list[float]]
     death_cause: list[str | None]
-    states_visited: list[int]
+    states_visited: NotRequired[list[int]]
 
 
 def sign(x):
@@ -163,6 +163,25 @@ class Agent:
             print(f"\rFinished training {episode + 1} episodes", end="", flush=True)
 
         print()
+        return log
+
+    def play_games(self, game: Game, episodes: int) -> TrainingLog:
+        log: TrainingLog = {
+            "score": [],
+            "steps": [],
+            "death_cause": [],
+        }
+        for i in range(episodes):
+            game.reset()
+            self.play(game)
+
+            log["score"].append(game.score)
+            log["steps"].append(game.steps)
+            log["death_cause"].append(game.death_cause)
+
+            print(f"\rPlayed {i + 1} rounds", end="", flush=True)
+            print()
+
         return log
 
     def save_values(self, path: str = SAVE_PATH) -> None:
