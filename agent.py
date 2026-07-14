@@ -6,6 +6,9 @@ from game import Game, STRAIGHT, TURN_LEFT, TURN_RIGHT
 
 VALUES_PATH = "values.pkl"
 
+HEIGHT = 15
+WIDTH = 17
+TRAINING_EPISODES = 100000
 DEFAULT_VALUE = 0.0
 TURN_CHOICES = (TURN_LEFT, STRAIGHT, TURN_RIGHT)
 FOOD_REWARD = 10.0
@@ -112,22 +115,22 @@ class Agent:
         with open(path, "rb") as file:
             self.values_dict = pickle.load(file)
 
-    def play(self, game: Game):
+    def play(self, game: Game) -> int:
         game.reset()
-        while game.is_alive and not game.game_won and game.steps <= MAX_STEPS:
-            action = self.choose_action(game, 0.0)
+        while game.is_alive and not game.game_won:
+            action = self.choose_action(game, epsilon=0.0)
             game.step(action)
 
-        print(f"Final score: {len(game.body) - 3}")
+        return len(game.body) - 3
 
 
-def watch(agent: Agent, game: Game, delay: float = 0.2) -> None:
+def watch(agent: Agent, game: Game, delay: float = 0.1) -> None:
     game.reset()
     while game.is_alive and not game.game_won:
         print("\033[H\033[J", end="")
         game.render()
         print(f"Score: {len(game.body) - 3}  Steps: {game.steps}")
-        action = agent.choose_action(game, epsilon=0)
+        action = agent.choose_action(game, epsilon=0.0)
         game.step(action)
         time.sleep(delay)
     print("\033[H\033[J", end="")
@@ -137,8 +140,19 @@ def watch(agent: Agent, game: Game, delay: float = 0.2) -> None:
     )
 
 
+def evaluate_avg(episodes: int, agent: Agent, game: Game) -> float:
+    avg = 0
+    for i in range(episodes):
+        score = agent.play(game)
+        avg += (score - avg) / (i + 1)
+        print(f"\rFinished {i + 1} episodes", end="", flush=True)
+    print()
+    return avg
+
+
 if __name__ == "__main__":
-    game = Game(15, 17)
+    game = Game(HEIGHT, WIDTH)
     agent = Agent()
     agent.load()
-    watch(agent, game)
+    avg = evaluate_avg(10000, agent, game)
+    print(avg)
