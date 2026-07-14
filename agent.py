@@ -141,7 +141,7 @@ def watch(agent: Agent, game: Game, delay: float = 0.1) -> None:
     )
 
 
-def evaluate_avg(episodes: int, agent: Agent, game: Game) -> float:
+def evaluate_avg(agent: Agent, game: Game, episodes: int = 10000) -> float:
     avg = 0
     for i in range(episodes):
         score = agent.play(game)
@@ -158,5 +158,5 @@ if __name__ == "__main__":
     agent = Agent(decay_rate=decay_rate)
     agent.train(TRAINING_EPISODES, game)
     agent.save()
-    avg = evaluate_avg(10000, agent, game)
+    avg = evaluate_avg(agent, game)
     print(avg)
