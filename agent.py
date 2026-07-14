@@ -1,6 +1,5 @@
 import random
 import pickle
-import os
 import time
 from game import Game, STRAIGHT, TURN_LEFT, TURN_RIGHT
 
