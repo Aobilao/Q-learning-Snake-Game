@@ -30,6 +30,10 @@ class Game:
         self.game_won = False
         self.ate = False
 
+    @property
+    def score(self) -> int:
+        return len(self.body) - 3
+
     def new_head(self, action: int) -> tuple[int, int]:
         head_i, head_j = self.body[0]
         dir_idx = (self.dir_idx + action) % 4

@@ -2,10 +2,11 @@ import random
 import pickle
 import time
 from game import DIRECTIONS, Game, STRAIGHT, TURN_LEFT, TURN_RIGHT
+from typing import TypedDict
 
-SAVE_PATH = "local_values.pkl"
-VALUES_PATH = "values.pkl"
-TRAINING_LOG = "training_log.pkl"
+SAVE_PATH = "values/local_values.pkl"
+VALUES_PATH = "values/values.pkl"
+TRAINING_LOG = "values/augmented_training_log.pkl"
 TURN_CHOICES = (TURN_LEFT, STRAIGHT, TURN_RIGHT)
 
 HEIGHT = 15
@@ -16,10 +17,18 @@ FOOD_REWARD = 10.0
 LOSE_REWARD = -10.0
 TIMEOUT_REWARD = -10.0
 STEP_REWARD = -0.01
-MAX_STEPS_TRAINING = 17 * 15
+MAX_STEPS_TRAINING = HEIGHT * WIDTH
 MAX_STEPS_PLAYING = 2000
 
-State = tuple[bool, bool, bool, int, int, int]
+State = tuple[bool, bool, bool, int, int, int, int, int, int]
+
+
+class TrainingLog(TypedDict):
+    score: list[int]
+    steps: list[int]
+    epsilon: list[float]
+    death_cause: list[str | None]
+    states_visited: list[int]
 
 
 def sign(x):
@@ -41,29 +50,6 @@ class Agent:
         self.epsilon_start = epsilon_start
         self.epsilon_end = epsilon_end
         self.decay_rate = decay_rate
-
-    def body_ray(self, game: Game, turn: int, max_dist: int = 3) -> int:
-        dir_idx = (game.dir_idx + turn) % 4
-        di, dj = DIRECTIONS[dir_idx]
-        hi, hj = game.body[0]
-        for dist in range(1, max_dist + 1):
-            ci, cj = hi + di * dist, hj + dj * dist
-            if game.is_occupied((ci, cj)):
-                return dist
-        return max_dist + 1
-
-    def get_minimal_state(self, game: Game) -> State:
-        danger: list[bool] = []
-        for turn in TURN_CHOICES:
-            new_head = game.new_head(turn)
-            danger.append(game.is_occupied(new_head))
-
-        food_i, food_j = game.food_pos
-        head_i, head_j = game.body[0]
-        food_di = sign(food_i - head_i)
-        food_dj = sign(food_j - head_j)
-
-        return (*danger, game.dir_idx, food_di, food_dj)
 
     def get_augmented_state(self, game: Game) -> State:
         is_occupied = game.is_occupied
@@ -114,9 +100,7 @@ class Agent:
         return self._greedy_action(state)
 
     def choose_action(self, game: Game, epsilon: float) -> int:
-        if random.random() <= epsilon:
-            return random.choice(TURN_CHOICES)
-        return self._greedy_action(self.get_augmented_state(game))
+        return self.choose_action_from_state(self.get_augmented_state(game), epsilon)
 
     def compute_reward(self, game: Game) -> float:
         if not game.is_alive:
@@ -127,8 +111,8 @@ class Agent:
             return TIMEOUT_REWARD
         return STEP_REWARD
 
-    def train(self, episodes: int, game: Game) -> dict[str, list]:
-        log = {
+    def train(self, episodes: int, game: Game) -> TrainingLog:
+        log: TrainingLog = {
             "score": [],
             "steps": [],
             "epsilon": [],
@@ -170,7 +154,7 @@ class Agent:
 
                 state = next_state
 
-            log["score"].append(len(game.body) - 3)
+            log["score"].append(game.score)
             log["steps"].append(game.steps)
             log["epsilon"].append(epsilon)
             log["death_cause"].append(game.death_cause)
@@ -196,7 +180,7 @@ class Agent:
         while game.is_alive and not game.game_won and game.steps <= MAX_STEPS_PLAYING:
             action = self.choose_action(game, epsilon=0.0)
             game.step(action)
-        return len(game.body) - 3
+        return game.score
 
 
 def watch(agent: Agent, game: Game, delay: float = 0.1) -> None:
@@ -204,14 +188,14 @@ def watch(agent: Agent, game: Game, delay: float = 0.1) -> None:
     while game.is_alive and not game.game_won:
         print("\033[H\033[J", end="")
         game.render()
-        print(f"Score: {len(game.body) - 3}  Steps: {game.steps}")
+        print(f"Score: {game.score}  Steps: {game.steps}")
         action = agent.choose_action(game, epsilon=0.0)
         game.step(action)
         time.sleep(delay)
     print("\033[H\033[J", end="")
     game.render()
     print(
-        f"Game over! Score: {len(game.body) - 3}  Steps: {game.steps}  Death: {game.death_cause}"
+        f"Game over! Score: {game.score}  Steps: {game.steps}  Death: {game.death_cause}"
     )
 
 
@@ -225,13 +209,13 @@ def evaluate_avg(agent: Agent, game: Game, episodes: int = 10000) -> float:
     return avg
 
 
-def save_log(log: dict[str, list], path: str = TRAINING_LOG) -> None:
+def save_log(log: TrainingLog, path: str = TRAINING_LOG) -> None:
     with open(path, "wb") as file:
         pickle.dump(log, file)
     print(f"Saved log to {path}")
 
 
-def load_log(path: str = TRAINING_LOG) -> dict[str, list]:
+def load_log(path: str = TRAINING_LOG) -> TrainingLog:
     with open(path, "rb") as file:
         return pickle.load(file)
 
@@ -243,7 +227,7 @@ if __name__ == "__main__":
     agent = Agent(decay_rate=decay_rate)
 
     log = agent.train(TRAINING_EPISODES, game)
-    agent.save_values("augmented_values.pkl")
+    agent.save_values()
     save_log(log, TRAINING_LOG)
 
     avg = evaluate_avg(agent, game)
