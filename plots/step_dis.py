@@ -37,7 +37,7 @@ if __name__ == "__main__":
         scores.min(), color="#8172B2", lw=1, ls=":", label=f"min = {scores.min()}"
     )
 
-    ax.set_xlabel("Score")
+    ax.set_xlabel("Steps")
     ax.set_ylabel("Count")
     ax.grid(axis="y", alpha=0.3)
     ax.set_axisbelow(True)
