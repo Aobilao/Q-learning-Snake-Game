@@ -1,3 +1,8 @@
 .venv/
 __pycache__/
 values/local_values.pkl
+values/local_training_log.pkl
+values/local_run_log.pkl
+local_plots/
+local_figures/
+*.bak

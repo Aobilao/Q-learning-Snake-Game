@@ -26,6 +26,7 @@ class Game:
         self.is_alive = True
         self._place_food()
         self.steps = 0
+        self.steps_since_food = 0
         self.death_cause: str | None = None
         self.game_won = False
         self.ate = False
@@ -52,6 +53,7 @@ class Game:
     def step(self, action: int) -> None:
         self.ate = False
         self.steps += 1
+        self.steps_since_food += 1
         new_head = self.new_head(action)
         self.dir_idx = (self.dir_idx + action) % 4
 
@@ -60,6 +62,7 @@ class Game:
             self.body_set.add(new_head)
             self._place_food()
             self.ate = True
+            self.steps_since_food = 0
             return
 
         tail = self.body[-1]

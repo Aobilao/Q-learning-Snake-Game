@@ -5,10 +5,11 @@ from game import DIRECTIONS, Game, STRAIGHT, TURN_LEFT, TURN_RIGHT
 from typing import TypedDict
 
 SAVE_PATH = "values/local_values.pkl"
-VALUES_PATH = "values/values.pkl"
-TRAINING_LOG = "values/augmented_training_log.pkl"
+LOAD_PATH = "values/augmented_values.pkl"
+TRAINING_LOG_PATH = "values/local_training_log.pkl"
 TURN_CHOICES = (TURN_LEFT, STRAIGHT, TURN_RIGHT)
 
+SEED: int | None = 42
 HEIGHT = 15
 WIDTH = 17
 TRAINING_EPISODES = 1000000
@@ -17,8 +18,8 @@ FOOD_REWARD = 10.0
 LOSE_REWARD = -10.0
 TIMEOUT_REWARD = -10.0
 STEP_REWARD = -0.01
-MAX_STEPS_TRAINING = HEIGHT * WIDTH
-MAX_STEPS_PLAYING = 2000
+TIMEOUT_STEPS_TRAINING = HEIGHT * WIDTH
+TIMEOUT_STEPS_PLAYING = 2000
 
 State = tuple[bool, bool, bool, int, int, int, int, int, int]
 
@@ -101,7 +102,7 @@ class Agent:
         return random.choice(best_turns)
 
     def choose_action_from_state(self, state: State, epsilon: float) -> int:
-        if random.random() <= epsilon:
+        if random.random() < epsilon:
             return random.choice(TURN_CHOICES)
         return self._greedy_action(state)
 
@@ -113,11 +114,12 @@ class Agent:
             return LOSE_REWARD
         if game.ate is True:
             return FOOD_REWARD
-        if game.steps >= MAX_STEPS_TRAINING:
+        if game.steps_since_food >= TIMEOUT_STEPS_TRAINING:
             return TIMEOUT_REWARD
         return STEP_REWARD
 
-    def train(self, episodes: int, game: Game) -> TrainingLog:
+    def train(self, game: Game, episodes: int) -> TrainingLog:
+        start_time = time.perf_counter()
         log: TrainingLog = {
             "score": [],
             "steps": [],
@@ -141,7 +143,9 @@ class Agent:
             epsilon = max(epsilon_end, epsilon_start * (decay_rate**episode))
             state = get_state(game)
             while (
-                game.is_alive and not game.game_won and game.steps < MAX_STEPS_TRAINING
+                game.is_alive
+                and not game.game_won
+                and game.steps_since_food < TIMEOUT_STEPS_TRAINING
             ):
                 action = choose(state, epsilon)
                 game.step(action)
@@ -151,7 +155,7 @@ class Agent:
                 is_terminal = (
                     not game.is_alive
                     or game.game_won
-                    or game.steps >= MAX_STEPS_TRAINING
+                    or game.steps_since_food >= TIMEOUT_STEPS_TRAINING
                 )
                 q_max = 0.0 if is_terminal else max(Q(next_state))
 
@@ -160,34 +164,47 @@ class Agent:
 
                 state = next_state
 
+            death_cause = game.death_cause
+            if death_cause is None and not game.game_won:
+                death_cause = "timeout"
+
             log["score"].append(game.score)
             log["steps"].append(game.steps)
             log["epsilon"].append(epsilon)
-            log["death_cause"].append(game.death_cause)
+            log["death_cause"].append(death_cause)
             log["states_visited"].append(len(values_dict))
 
-            print(f"\rFinished training {episode + 1} episodes", end="", flush=True)
+            if (episode + 1) % max(1, episodes // 100) == 0:
+                print(f"Finished training {episode + 1} episodes")
 
-        print()
+        elapsed = time.perf_counter() - start_time
+        hours, rem = divmod(elapsed, 3600)
+        minutes, seconds = divmod(rem, 60)
+        print(
+            f"\nTrained {episodes} episodes in {int(hours)}h {int(minutes)}m {seconds:.1f}s"
+        )
         return log
 
-    def play_games(self, game: Game, episodes: int) -> TrainingLog:
+    def play_games(self, game: Game, episodes: int) -> EvalLog:
         log: EvalLog = {
             "score": [],
             "steps": [],
             "death_cause": [],
         }
         for i in range(episodes):
-            game.reset()
             self.play(game)
+
+            death_cause = game.death_cause
+            if death_cause is None and not game.game_won:
+                death_cause = "timeout"
 
             log["score"].append(game.score)
             log["steps"].append(game.steps)
-            log["death_cause"].append(game.death_cause)
+            log["death_cause"].append(death_cause)
 
             print(f"\rPlayed {i + 1} rounds", end="", flush=True)
-            print()
 
+        print()
         return log
 
     def save_values(self, path: str = SAVE_PATH) -> None:
@@ -195,14 +212,18 @@ class Agent:
             pickle.dump(self.values_dict, file)
         print(f"Saved values to {path}")
 
-    def load_values(self, path: str = VALUES_PATH) -> None:
+    def load_values(self, path: str = LOAD_PATH) -> None:
         with open(path, "rb") as file:
             self.values_dict = pickle.load(file)
         print(f"Loaded values from {path}")
 
     def play(self, game: Game) -> int:
         game.reset()
-        while game.is_alive and not game.game_won and game.steps < MAX_STEPS_PLAYING:
+        while (
+            game.is_alive
+            and not game.game_won
+            and game.steps_since_food < TIMEOUT_STEPS_PLAYING
+        ):
             action = self.choose_action(game, epsilon=0.0)
             game.step(action)
         return game.score
@@ -234,18 +255,21 @@ def evaluate_avg(agent: Agent, game: Game, episodes: int = 10000) -> float:
     return avg
 
 
-def save_log(log: TrainingLog, path: str = TRAINING_LOG) -> None:
+def save_log(log: TrainingLog | EvalLog, path: str = TRAINING_LOG_PATH) -> None:
     with open(path, "wb") as file:
         pickle.dump(log, file)
     print(f"Saved log to {path}")
 
 
-def load_log(path: str = TRAINING_LOG) -> TrainingLog:
+def load_log(path: str = TRAINING_LOG_PATH) -> TrainingLog:
     with open(path, "rb") as file:
         return pickle.load(file)
 
 
 if __name__ == "__main__":
+    if SEED is not None:
+        random.seed(SEED)
+
     game = Game(HEIGHT, WIDTH)
     agent = Agent()
 
@@ -253,9 +277,9 @@ if __name__ == "__main__":
     decay_rate = (agent.epsilon_end / agent.epsilon_start) ** (1 / target_episode)
     agent.decay_rate = decay_rate
 
-    log = agent.train(TRAINING_EPISODES, game)
-    agent.save_values()
-    save_log(log, TRAINING_LOG)
+    log = agent.train(game, TRAINING_EPISODES)
+    agent.save_values(SAVE_PATH)
+    save_log(log, TRAINING_LOG_PATH)
 
     avg = evaluate_avg(agent, game)
     print(avg)

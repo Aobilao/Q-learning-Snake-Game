@@ -8,7 +8,7 @@ sys.path.insert(0, str(ROOT))
 
 from agent import load_log
 
-LOG_PATH = ROOT / "values" / "augmented_training_log.pkl"
+LOG_PATH = ROOT / "values" / "training_log.pkl"
 FIG_PATH = ROOT / "figures" / "learning_curve.png"
 WINDOW = 5000
 

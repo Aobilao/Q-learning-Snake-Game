@@ -5,4 +5,4 @@ if __name__ == "__main__":
     game = Game(HEIGHT, WIDTH)
     agent = Agent()
     agent.load_values("values/augmented_values.pkl")
-    watch(agent, game)
+    watch(agent, game, 0.1)
