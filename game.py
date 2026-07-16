@@ -65,15 +65,6 @@ class Game:
         d_i, d_j = DIRECTIONS[dir_idx]
         return (head_i + d_i, head_j + d_j)
 
-    def in_bound(self, head: tuple[int, int]) -> bool:
-        head_i, head_j = head
-        return 0 <= head_i < self.height and 0 <= head_j < self.width
-
-    def is_occupied(self, point: tuple[int, int]) -> bool:
-        if not self.in_bound(point):
-            return True
-        return point in self.body_set and point != self.body[-1]
-
     def _remove_free(self, cell: tuple[int, int]) -> None:
         free_cells = self.free_cells
         free_index = self.free_index
@@ -111,7 +102,8 @@ class Game:
             self.death_cause = "body"
             return
 
-        if not self.in_bound(new_head):
+        new_head_i, new_head_j = new_head
+        if not (0 <= new_head_i < self.height and 0 <= new_head_j < self.width):
             self.is_alive = False
             self.death_cause = "wall"
             return
