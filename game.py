@@ -8,6 +8,23 @@ DIRECTIONS = [UP, RIGHT, DOWN, LEFT]
 
 
 class Game:
+    __slots__ = (
+        "height",
+        "width",
+        "body",
+        "body_set",
+        "free_cells",
+        "free_index",
+        "dir_idx",
+        "is_alive",
+        "food_pos",
+        "steps",
+        "steps_since_food",
+        "death_cause",
+        "game_won",
+        "ate",
+    )
+
     def __init__(self, height: int = 15, width: int = 17) -> None:
         self.height = height
         self.width = width
@@ -22,6 +39,13 @@ class Game:
             ]
         )
         self.body_set = set(self.body)
+        self.free_cells = [
+            (i, j)
+            for i in range(self.height)
+            for j in range(self.width)
+            if (i, j) not in self.body_set
+        ]
+        self.free_index = {cell: idx for idx, cell in enumerate(self.free_cells)}
         self.dir_idx = 1
         self.is_alive = True
         self._place_food()
@@ -50,6 +74,21 @@ class Game:
             return True
         return point in self.body_set and point != self.body[-1]
 
+    def _remove_free(self, cell: tuple[int, int]) -> None:
+        free_cells = self.free_cells
+        free_index = self.free_index
+        idx = free_index.pop(cell)
+        last_idx = len(free_cells) - 1
+        if idx != last_idx:
+            last_cell = free_cells[last_idx]
+            free_cells[idx] = last_cell
+            free_index[last_cell] = idx
+        free_cells.pop()
+
+    def _add_free(self, cell: tuple[int, int]) -> None:
+        self.free_index[cell] = len(self.free_cells)
+        self.free_cells.append(cell)
+
     def step(self, action: int) -> None:
         self.ate = False
         self.steps += 1
@@ -60,6 +99,7 @@ class Game:
         if new_head == self.food_pos:
             self.body.appendleft(new_head)
             self.body_set.add(new_head)
+            self._remove_free(new_head)
             self._place_food()
             self.ate = True
             self.steps_since_food = 0
@@ -80,19 +120,16 @@ class Game:
         self.body.pop()
         self.body_set.remove(tail)
         self.body_set.add(new_head)
+        if new_head != tail:
+            self._remove_free(new_head)
+            self._add_free(tail)
 
         if len(self.body) == self.width * self.height:
             self.game_won = True
 
     def _place_food(self) -> None:
-        free = [
-            (i, j)
-            for i in range(self.height)
-            for j in range(self.width)
-            if (i, j) not in self.body_set
-        ]
-        if free:
-            self.food_pos = random.choice(free)
+        if self.free_cells:
+            self.food_pos = random.choice(self.free_cells)
 
     def play(self) -> None:
         while self.is_alive and not self.game_won:

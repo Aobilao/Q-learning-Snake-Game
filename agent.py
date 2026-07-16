@@ -1,13 +1,15 @@
 import random
 import pickle
 import time
+
 from game import DIRECTIONS, Game, STRAIGHT, TURN_LEFT, TURN_RIGHT
 from typing import TypedDict
+
+TURN_CHOICES = (TURN_LEFT, STRAIGHT, TURN_RIGHT)
 
 SAVE_PATH = "values/local_values.pkl"
 LOAD_PATH = "values/augmented_values.pkl"
 TRAINING_LOG_PATH = "values/local_training_log.pkl"
-TURN_CHOICES = (TURN_LEFT, STRAIGHT, TURN_RIGHT)
 
 SEED: int | None = 42
 HEIGHT = 15
@@ -21,7 +23,7 @@ STEP_REWARD = -0.01
 TIMEOUT_STEPS_TRAINING = HEIGHT * WIDTH
 TIMEOUT_STEPS_PLAYING = 2000
 
-State = tuple[bool, bool, bool, int, int, int, int, int, int]
+State = tuple[int, int, int, int, int, int, int, int]
 
 
 class TrainingLog(TypedDict):
@@ -59,27 +61,38 @@ class Agent:
         self.decay_rate = decay_rate
 
     def get_augmented_state(self, game: Game) -> State:
-        is_occupied = game.is_occupied
+        height = game.height
+        width = game.width
+        body_set = game.body_set
+        tail = game.body[-1]
         head_i, head_j = game.body[0]
         dir_idx = game.dir_idx
 
-        danger: list[bool] = []
         rays: list[int] = []
         for turn in TURN_CHOICES:
             d_i, d_j = DIRECTIONS[(dir_idx + turn) % 4]
             ray = 4
             for dist in range(1, 4):
-                if is_occupied((head_i + d_i * dist, head_j + d_j * dist)):
+                p_i = head_i + d_i * dist
+                p_j = head_j + d_j * dist
+                if not (0 <= p_i < height and 0 <= p_j < width):
                     ray = dist
                     break
-            danger.append(ray == 1)
+                point = (p_i, p_j)
+                if point in body_set and point != tail:
+                    ray = dist
+                    break
             rays.append(ray)
 
         food_i, food_j = game.food_pos
         food_di = sign(food_i - head_i)
         food_dj = sign(food_j - head_j)
 
-        return (*danger, dir_idx, food_di, food_dj, *rays)
+        tail_i, tail_j = tail
+        tail_di = sign(tail_i - head_i)
+        tail_dj = sign(tail_j - head_j)
+
+        return (dir_idx, food_di, food_dj, *rays, tail_di, tail_dj)
 
     def Q(self, state: State) -> list[float]:
         q = self.values_dict.get(state)
@@ -88,8 +101,7 @@ class Agent:
             self.values_dict[state] = q
         return q
 
-    def _greedy_action(self, state: State) -> int:
-        q = self.Q(state)
+    def _greedy_action_from_q(self, q: list[float]) -> int:
         best_val = float("-inf")
         best_turns: list[int] = []
         for turn in TURN_CHOICES:
@@ -99,15 +111,12 @@ class Agent:
                 best_turns = [turn]
             elif val == best_val:
                 best_turns.append(turn)
+        if len(best_turns) == 1:
+            return best_turns[0]
         return random.choice(best_turns)
 
-    def choose_action_from_state(self, state: State, epsilon: float) -> int:
-        if random.random() < epsilon:
-            return random.choice(TURN_CHOICES)
-        return self._greedy_action(state)
-
-    def choose_action(self, game: Game, epsilon: float) -> int:
-        return self.choose_action_from_state(self.get_augmented_state(game), epsilon)
+    def choose_action_greedy(self, game: Game) -> int:
+        return self._greedy_action_from_q(self.Q(self.get_augmented_state(game)))
 
     def compute_reward(self, game: Game) -> float:
         if not game.is_alive:
@@ -129,7 +138,7 @@ class Agent:
         }
         get_state = self.get_augmented_state
         Q = self.Q
-        choose = self.choose_action_from_state
+        greedy_from_q = self._greedy_action_from_q
         compute_reward = self.compute_reward
         alpha = self.alpha
         gamma = self.gamma
@@ -141,15 +150,17 @@ class Agent:
         for episode in range(episodes):
             game.reset()
             epsilon = max(epsilon_end, epsilon_start * (decay_rate**episode))
-            state = get_state(game)
+            q_state = Q(get_state(game))
             while (
                 game.is_alive
                 and not game.game_won
                 and game.steps_since_food < TIMEOUT_STEPS_TRAINING
             ):
-                action = choose(state, epsilon)
+                if random.random() < epsilon:
+                    action = TURN_CHOICES[int(random.random() * 3)]
+                else:
+                    action = greedy_from_q(q_state)
                 game.step(action)
-                next_state = get_state(game)
                 reward = compute_reward(game)
 
                 is_terminal = (
@@ -157,12 +168,12 @@ class Agent:
                     or game.game_won
                     or game.steps_since_food >= TIMEOUT_STEPS_TRAINING
                 )
-                q_max = 0.0 if is_terminal else max(Q(next_state))
+                q_next = Q(get_state(game))
+                q_max = 0.0 if is_terminal else max(q_next)
 
-                q_prev = Q(state)
-                q_prev[action] += alpha * (reward + gamma * q_max - q_prev[action])
+                q_state[action] += alpha * (reward + gamma * q_max - q_state[action])
 
-                state = next_state
+                q_state = q_next
 
             death_cause = game.death_cause
             if death_cause is None and not game.game_won:
@@ -175,7 +186,7 @@ class Agent:
             log["states_visited"].append(len(values_dict))
 
             if (episode + 1) % max(1, episodes // 100) == 0:
-                print(f"Finished training {episode + 1} episodes")
+                print(f"\rFinished training {episode + 1} episodes", end="", flush=True)
 
         elapsed = time.perf_counter() - start_time
         hours, rem = divmod(elapsed, 3600)
@@ -186,14 +197,14 @@ class Agent:
         return log
 
     def play_games(self, game: Game, episodes: int) -> EvalLog:
+        start_time = time.perf_counter()
         log: EvalLog = {
             "score": [],
             "steps": [],
             "death_cause": [],
         }
-        for i in range(episodes):
+        for episode in range(episodes):
             self.play(game)
-
             death_cause = game.death_cause
             if death_cause is None and not game.game_won:
                 death_cause = "timeout"
@@ -202,9 +213,15 @@ class Agent:
             log["steps"].append(game.steps)
             log["death_cause"].append(death_cause)
 
-            print(f"\rPlayed {i + 1} rounds", end="", flush=True)
+            if (episode + 1) % max(1, episodes // 100) == 0:
+                print(f"\rPlayed {episode + 1} rounds", end="", flush=True)
 
-        print()
+        elapsed = time.perf_counter() - start_time
+        hours, rem = divmod(elapsed, 3600)
+        minutes, seconds = divmod(rem, 60)
+        print(
+            f"\nTrained {episodes} episodes in {int(hours)}h {int(minutes)}m {seconds:.1f}s"
+        )
         return log
 
     def save_values(self, path: str = SAVE_PATH) -> None:
@@ -224,7 +241,7 @@ class Agent:
             and not game.game_won
             and game.steps_since_food < TIMEOUT_STEPS_PLAYING
         ):
-            action = self.choose_action(game, epsilon=0.0)
+            action = self.choose_action_greedy(game)
             game.step(action)
         return game.score
 
@@ -235,7 +252,7 @@ def watch(agent: Agent, game: Game, delay: float = 0.1) -> None:
         print("\033[H\033[J", end="")
         game.render()
         print(f"Score: {game.score}  Steps: {game.steps}")
-        action = agent.choose_action(game, epsilon=0.0)
+        action = agent.choose_action_greedy(game)
         game.step(action)
         time.sleep(delay)
     print("\033[H\033[J", end="")
