@@ -33,64 +33,72 @@ def sign(x):
     return (x > 0) - (x < 0)
 
 
-def _is_open(
+def _reachable(
     start: tuple[int, int],
-    tail: tuple[int, int],
+    target: tuple[int, int],
     obstacles: set,
     height: int,
     width: int,
-    length_needed: int,
+    min_free: int,
 ) -> bool:
-    visited = {start}
-    tail_reached = start == tail
-    count = 0
+    seen = {start}
     queue = deque((start,))
+    reached = start == target
+    count = 0
     while queue:
-        if tail_reached and count >= length_needed:
+        if reached and count >= min_free:
             return True
         ci, cj = queue.popleft()
         for d_i, d_j in DIRECTIONS:
             ni, nj = ci + d_i, cj + d_j
             if not (0 <= ni < height and 0 <= nj < width):
                 continue
-            point = (ni, nj)
-            if point in visited or point in obstacles:
+            cell = (ni, nj)
+            if cell in seen or cell in obstacles:
                 continue
-            visited.add(point)
+            seen.add(cell)
             count += 1
-            if point == tail:
-                tail_reached = True
-            queue.append(point)
-    return tail_reached and count >= length_needed
+            if cell == target:
+                reached = True
+            queue.append(cell)
+    return reached and count >= min_free
 
 
 def compute_raw_state(game: Game) -> tuple[int, int, int, int, int]:
     height, width = game.height, game.width
-    body_set = game.body_set
     body = game.body
+    body_set = game.body_set
     head_i, head_j = body[0]
-    tail = body[-1]
+    old_tail = body[-1]
     dir_idx = game.dir_idx
-    food_i, food_j = game.food_pos
+    food = game.food_pos
+    food_i, food_j = food
     length = len(body)
-    obstacles = body_set - {tail}
 
     categories = []
     for turn in TURN_CHOICES:
         d_i, d_j = DIRECTIONS[(dir_idx + turn) % 4]
-        cand_i, cand_j = head_i + d_i, head_j + d_j
-        candidate = (cand_i, cand_j)
+        new_head = (head_i + d_i, head_j + d_j)
+        ni, nj = new_head
 
-        if not (0 <= cand_i < height and 0 <= cand_j < width):
+        if not (0 <= ni < height and 0 <= nj < width):
             categories.append(LETHAL)
             continue
-        if candidate in body_set and candidate != tail:
+        if new_head in body_set and new_head != old_tail:
             categories.append(LETHAL)
             continue
 
-        length_needed = length + 1 if candidate == game.food_pos else length
-        is_open = _is_open(candidate, tail, obstacles, height, width, length_needed)
-        categories.append(OPEN if is_open else CRAMPED)
+        if new_head == food:
+            new_tail = old_tail
+            body_after = body_set | {new_head}
+            min_free = length + 1
+        else:
+            new_tail = body[-2]
+            body_after = (body_set - {old_tail}) | {new_head}
+            min_free = length
+
+        safe = _reachable(new_head, new_tail, body_after - {new_tail}, height, width, min_free)
+        categories.append(OPEN if safe else CRAMPED)
 
     c_left, c_straight, c_right = categories
 
